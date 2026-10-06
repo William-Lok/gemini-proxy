@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/proxy/v1beta/:path*",
+      "destination": "/api/proxy?__gemini_path=/v1beta/:path*"
+    },
+    {
+      "source": "/api/v1beta/:path*",
+      "destination": "/api/proxy?__gemini_path=/v1beta/:path*"
+    }
+  ]
+}
