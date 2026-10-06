@@ -1,9 +1,8 @@
- export const config = {
-  runtime: 'edge', // 使用 Edge 運算
+export const config = {
+  runtime: 'edge',
 };
 
 export default async function handler(req) {
-  // 如果是 OPTIONS 預檢請求，直接回覆 200 (解決小程式跨域)
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
@@ -16,10 +15,11 @@ export default async function handler(req) {
   }
 
   const url = new URL(req.url);
-  // 將目的地替換為 Google 官方 API
   url.host = 'generativelanguage.googleapis.com';
+  
+  // 核心修正：將 Vercel 自帶的資料夾路徑刪除，還原成官方 API 路徑
+  url.pathname = url.pathname.replace(/^\/api\/proxy/, '');
 
-  // 清洗 IP，以防萬一
   const newHeaders = new Headers(req.headers);
   newHeaders.delete('x-forwarded-for');
   newHeaders.delete('x-real-ip');
@@ -34,7 +34,6 @@ export default async function handler(req) {
   const response = await fetch(modifiedRequest);
   const modifiedResponse = new Response(response.body, response);
 
-  // 加上跨域 Headers
   modifiedResponse.headers.set('Access-Control-Allow-Origin', '*');
 
   return modifiedResponse;
