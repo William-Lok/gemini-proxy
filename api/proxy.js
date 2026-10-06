@@ -54,6 +54,9 @@ export default async function handler(req) {
   url.pathname = path;
   url.search = incoming.search;
   url.searchParams.delete('__gemini_path');
+  // Vercel also adds the captured rewrite parameter to the query string.
+  // It is routing metadata, not a Google API parameter.
+  url.searchParams.delete('path');
 
   // Forward only API headers, never the client's Host, cookies, or IP headers.
   const headers = new Headers();

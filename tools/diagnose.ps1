@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Net.Http
 $BaseUrl = $BaseUrl.TrimEnd('/')
-if ([uri]$BaseUrl -isnot [uri] -or ([uri]$BaseUrl).Scheme -ne 'https') {
+if (([uri]$BaseUrl).Scheme -ne 'https') {
     throw 'Use an HTTPS proxy URL.'
 }
 if ($Model -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid model name.' }
@@ -76,7 +76,9 @@ try {
     } while ($pageToken -and -not $found)
     if (-not $found) { throw "Your API did not list $Model with generateContent support. Do not guess a replacement model." }
 
-    $body = @{ contents = @(@{ parts = @(@{ text = 'Reply only with OK.' }) }); generationConfig = @{ maxOutputTokens = 256 } } | ConvertTo-Json -Depth 8 -Compress
+    $generation = @{ maxOutputTokens = 1024 }
+    if ($Model -eq 'gemini-3.8-flash') { $generation.thinkingConfig = @{ thinkingLevel = 'low' } }
+    $body = @{ contents = @(@{ parts = @(@{ text = 'Reply only with OK.' }) }); generationConfig = $generation } | ConvertTo-Json -Depth 8 -Compress
     $result = (Send-DiagnosticRequest -Path "/api/v1beta/models/${Model}:generateContent" -Method POST -Body $body -Authenticated) | ConvertFrom-Json
     $reply = @($result.candidates | ForEach-Object { $_.content.parts } | ForEach-Object { $_.text }) -join "`n"
     if ([string]::IsNullOrWhiteSpace($reply)) {

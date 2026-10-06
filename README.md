@@ -25,6 +25,10 @@ The proxy exposes only `/v1beta/models` and its model/action endpoints.
 
 ## Verify in Windows PowerShell or PowerShell 7
 
+For a browser test, open the base URL. The page asks for a key, checks the model
+list, and sends one short prompt. It uses no local storage, analytics, or
+third-party scripts. All errors appear as text rather than executable HTML.
+
 Run `./tools/diagnose.ps1`. It first checks the deployed version and region,
 then asks for the key with hidden input. It lists the available models before
 sending one short generation request. The key is not written to disk or shell

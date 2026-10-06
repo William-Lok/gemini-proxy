@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Gemini 連線測試</title>
+<style>
+  :root { color-scheme: light; font-family: system-ui, sans-serif; color: #172b37; background: #f3f6f8; }
+  body { margin: 0; padding: 48px 20px; }
+  main { max-width: 640px; margin: auto; padding: 32px; background: white; border: 1px solid #dce5ea; border-radius: 20px; }
+  h1 { margin: 0 0 12px; font-size: 28px; }
+  p { line-height: 1.7; }
+  label { display: block; margin-top: 24px; font-weight: 600; }
+  input, button { font: inherit; box-sizing: border-box; width: 100%; border-radius: 10px; padding: 13px; }
+  input { margin: 10px 0 16px; border: 1px solid #aebdc7; }
+  button { border: 0; color: white; background: #175c78; cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .6; cursor: wait; }
+  small { display: block; color: #566a77; line-height: 1.7; margin: 12px 0; }
+  #status { white-space: pre-wrap; margin: 24px 0 0; padding: 16px; border-radius: 10px; background: #eef4f7; line-height: 1.7; }
+  #status.success { background: #e8f5ed; color: #185539; }
+  #status.error { background: #fff0ec; color: #8e2e1b; }
+  details { margin-top: 18px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+  @media (max-width: 480px) { body { padding: 20px 12px; } main { padding: 24px 20px; } }
+</style>
+<main>
+  <h1>Gemini 連線測試</h1>
+  <p>檢查這個代理能否取得模型清單，再請 Gemini 3.8 Flash 回覆一句「OK」。</p>
+  <form id="form">
+    <label for="key">Gemini API 金鑰</label>
+    <input id="key" type="password" autocomplete="off" spellcheck="false" required placeholder="貼上你的 API Key">
+    <button id="run" type="submit">檢查並測試</button>
+  </form>
+  <small>此頁不會儲存金鑰。金鑰會經由這個代理傳給 Google；測試會使用少量 API 額度。</small>
+  <div id="status" role="status" aria-live="polite">尚未測試。</div>
+  <details id="details" hidden><summary>查看測試紀錄</summary><pre id="log"></pre></details>
+</main>
+<script type="module">
+  const form = document.querySelector('#form');
+  const button = document.querySelector('#run');
+  const status = document.querySelector('#status');
+  const details = document.querySelector('#details');
+  const log = document.querySelector('#log');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    let key = document.querySelector('#key').value.trim();
+    if (!key) return;
+    button.disabled = true;
+    status.className = '';
+    details.hidden = false;
+    details.open = false;
+    log.textContent = '';
+    let region = '';
+    async function request(path, options = {}, authenticated = false) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 40000);
+      try {
+        const headers = new Headers(options.headers);
+        if (authenticated) headers.set('x-goog-api-key', key);
+        const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store', redirect: 'error' });
+        const text = await response.text();
+        const safeText = text.split(key).join('[已隱藏金鑰]');
+        log.textContent += `${options.method || 'GET'} ${path}\nHTTP ${response.status} · ${response.headers.get('content-type')}\n`;
+        if (!response.ok) {
+          log.textContent += safeText + '\n';
+          let message = safeText;
+          try { message = JSON.parse(safeText).error?.message || safeText; } catch {}
+          throw new Error(`HTTP ${response.status}：${message}`);
+        }
+        return JSON.parse(text);
+      } finally { clearTimeout(timeout); }
+    }
+    try {
+      status.textContent = '正在檢查代理部署…';
+      const health = await request('/api/proxy');
+      if (health.version !== '2') throw new Error('代理尚未更新至修正版。');
+      region = health.region;
+      log.textContent += `執行地區：${region}\n`;
+      status.textContent = '代理已連線，正在確認可用模型…';
+      let pageToken = '';
+      let available = false;
+      do {
+        const models = await request('/api/v1beta/models?pageSize=1000' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''), {}, true);
+        available = models.models?.some(model => model.name === 'models/gemini-3.8-flash' && model.supportedGenerationMethods?.includes('generateContent'));
+        pageToken = models.nextPageToken || '';
+      } while (pageToken && !available);
+      if (!available) throw new Error('你的 API 模型清單沒有可用的 Gemini 3.8 Flash。請確認此專案的模型權限。');
+      status.textContent = '模型已確認，正在等待 Gemini 回覆…';
+      const result = await request('/api/v1beta/models/gemini-3.8-flash:generateContent', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply only with OK.' }] }], generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'low' } } }),
+      }, true);
+      const reply = result.candidates?.flatMap(item => item.content?.parts || []).map(part => part.text || '').join('\n').trim();
+      if (!reply) {
+        log.textContent += JSON.stringify(result, null, 2).split(key).join('[已隱藏金鑰]');
+        throw new Error('Google 回傳成功狀態，但沒有文字回覆；請查看測試紀錄。');
+      }
+      status.className = 'success';
+      status.textContent = `測試成功\nGemini 回覆：${reply}\n執行地區：${region}`;
+    } catch (error) {
+      status.className = 'error';
+      const message = error.name === 'AbortError' ? '等待回覆逾時，請稍後重試。' : error.message.split(key).join('[已隱藏金鑰]');
+      status.textContent = `測試未通過\n${message}`;
+      details.open = true;
+    } finally {
+      key = '';
+      document.querySelector('#key').value = '';
+      button.disabled = false;
+    }
+  });
+</script>
+</html>

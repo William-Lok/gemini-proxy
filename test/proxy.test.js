@@ -32,7 +32,7 @@ test('all supported route forms reach the correct Google endpoint', async (t) =>
   for (const path of [
     '/api/v1beta/models?pageSize=1000',
     '/api/proxy/v1beta/models?pageSize=1000',
-    '/api/proxy?__gemini_path=/v1beta/models&pageSize=1000',
+    '/api/proxy?__gemini_path=/v1beta/models&pageSize=1000&path=models',
   ]) {
     const response = await handler(new Request(`https://proxy.example${path}`, {
       headers: { 'x-goog-api-key': 'test-key', host: 'proxy.example', cookie: 'private', 'x-forwarded-for': '192.0.2.1' },
