@@ -1,9 +1,14 @@
 # Gemini API proxy
 
 Vercel proxy for Gemini model listing, text generation, and streaming responses.
-The function requests execution in Washington, D.C. (`iad1`) and forwards only
+The Node.js function runs in Washington, D.C. (`iad1`) and forwards only
 API headers to Google's fixed API host. Clients supply their own Gemini API key;
 the repository contains no key and does not use a shared server credential.
+
+The proxy waits up to 120 seconds for Google's response headers, with a
+180-second Vercel function limit. Diagnostic clients allow 140 seconds per
+request. This avoids the previous Edge implementation's 24-second cutoff for
+generation requests. SSE responses remain streamed once Google responds.
 
 ## Endpoints
 
@@ -62,4 +67,5 @@ No packages are required. Use Node.js 20 or newer and run `npm test`.
 - [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
 - [Available models API](https://ai.google.dev/api/models)
 - [Vercel rewrites](https://vercel.com/docs/project-configuration/vercel-json#rewrites)
-- [Edge execution region](https://vercel.com/docs/functions/runtimes/edge#region)
+- [Node.js Web Standard handler](https://vercel.com/docs/functions/runtimes/node-js)
+- [Function duration](https://vercel.com/docs/functions/configuring-functions/duration)

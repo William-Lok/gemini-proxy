@@ -15,7 +15,7 @@ if ($Model -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid model name.' }
 $handler = New-Object System.Net.Http.HttpClientHandler
 $handler.AllowAutoRedirect = $false
 $client = New-Object System.Net.Http.HttpClient($handler)
-$client.Timeout = [TimeSpan]::FromSeconds(40)
+$client.Timeout = [TimeSpan]::FromSeconds(140)
 $script:geminiDiagnosticKey = $null
 
 function Send-DiagnosticRequest {
@@ -48,7 +48,7 @@ function Send-DiagnosticRequest {
 try {
     $health = (Send-DiagnosticRequest -Path '/api/proxy') | ConvertFrom-Json
     Write-Host ("Proxy version: {0}; execution region: {1}" -f $health.version, $health.region)
-    if ($health.version -ne '2') { throw 'The repaired proxy is not deployed yet.' }
+    if ($health.version -ne '3') { throw 'The timeout repair is not deployed yet.' }
     if ($CheckOnly) { return }
 
     $secureKey = Read-Host 'Paste your Gemini API key (hidden; not saved)' -AsSecureString

@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["iad1"],
+  "functions": {
+    "api/proxy.js": { "maxDuration": 180 }
+  },
   "rewrites": [
     {
       "source": "/api/proxy/v1beta/:path*",

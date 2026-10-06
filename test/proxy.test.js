@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler, { config } from '../api/proxy.js';
+import proxy from '../api/proxy.js';
+import { readFileSync } from 'node:fs';
+const handler = proxy.fetch;
+const deployment = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url)));
 
 test('health and preflight do not contact Google', async () => {
   const health = await handler(new Request('https://proxy.example/api/proxy'));
   assert.equal(health.status, 200);
-  assert.equal((await health.json()).version, '2');
-  assert.deepEqual(config.regions, ['iad1']);
+  const body = await health.json();
+  assert.equal(body.version, '3');
+  assert.equal(body.runtime, 'nodejs');
+  assert.deepEqual(deployment.regions, ['iad1']);
   const preflight = await handler(new Request('https://proxy.example/api/v1beta/models', { method: 'OPTIONS' }));
   assert.equal(preflight.status, 204);
   assert.match(preflight.headers.get('access-control-allow-headers'), /x-goog-api-key/);
@@ -94,4 +99,45 @@ test('connection errors return a readable error without leaking credentials', as
   const response = await handler(new Request('https://proxy.example/api/v1beta/models', { headers: { 'x-goog-api-key': 'secret-key' } }));
   assert.equal(response.status, 502);
   assert.doesNotMatch(await response.text(), /secret-key/);
+});
+
+test('generation can wait past the former 24-second cutoff', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal;
+  t.mock.method(globalThis, 'fetch', (_url, init) => {
+    signal = init.signal;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      setTimeout(() => resolve(Response.json({ candidates: [{ content: { parts: [{ text: 'OK' }] } }] })), 30000);
+    });
+  });
+  const pending = handler(new Request('https://proxy.example/api/v1beta/models/gemini-3.8-flash:generateContent', {
+    method: 'POST', headers: { 'x-goog-api-key': 'test-key', 'content-type': 'application/json' }, body: '{}',
+  }));
+  await new Promise(setImmediate);
+  t.mock.timers.tick(25000);
+  assert.equal(signal.aborted, false);
+  t.mock.timers.tick(5000);
+  const response = await pending;
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).candidates[0].content.parts[0].text, 'OK');
+});
+
+test('unresponsive Google requests return a readable timeout after 120 seconds', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal;
+  t.mock.method(globalThis, 'fetch', (_url, init) => {
+    signal = init.signal;
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    });
+  });
+  const pending = handler(new Request('https://proxy.example/api/v1beta/models', { headers: { 'x-goog-api-key': 'test-key' } }));
+  t.mock.timers.tick(119999);
+  assert.equal(signal.aborted, false);
+  t.mock.timers.tick(1);
+  const response = await pending;
+  assert.equal(response.status, 504);
+  assert.match((await response.json()).error.message, /timeout/);
+  assert.ok(deployment.functions['api/proxy.js'].maxDuration > 120);
 });

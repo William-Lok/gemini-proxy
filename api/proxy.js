@@ -1,8 +1,3 @@
-export const config = {
-  runtime: 'edge',
-  regions: ['iad1'],
-};
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -22,7 +17,7 @@ function localResponse(body, status = 200, extraHeaders = {}) {
   });
 }
 
-export default async function handler(req) {
+async function handler(req) {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -41,7 +36,9 @@ export default async function handler(req) {
   if (!path && req.method === 'GET') {
     return localResponse({
       service: 'gemini-proxy',
-      version: '2',
+      version: '3',
+      runtime: 'nodejs',
+      upstreamTimeoutSeconds: 120,
       region: process.env.VERCEL_REGION || 'local',
       modelsEndpoint: '/api/v1beta/models',
     });
@@ -73,7 +70,7 @@ export default async function handler(req) {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 24000);
+  const timer = setTimeout(() => controller.abort(), 120000);
   try {
     const response = await fetch(url, {
       method: req.method,
@@ -100,3 +97,6 @@ export default async function handler(req) {
     clearTimeout(timer);
   }
 }
+
+// Vercel's Node.js Web Standard handler supports longer initial response waits.
+export default { fetch: handler };

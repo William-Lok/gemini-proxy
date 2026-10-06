@@ -54,7 +54,7 @@
     let region = '';
     async function request(path, options = {}, authenticated = false) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 40000);
+      const timeout = setTimeout(() => controller.abort(), 140000);
       try {
         const headers = new Headers(options.headers);
         if (authenticated) headers.set('x-goog-api-key', key);
@@ -74,7 +74,7 @@
     try {
       status.textContent = '正在檢查代理部署…';
       const health = await request('/api/proxy');
-      if (health.version !== '2') throw new Error('代理尚未更新至修正版。');
+      if (health.version !== '3') throw new Error('代理尚未更新至延長等待時間的修正版，請稍後重新整理。');
       region = health.region;
       log.textContent += `執行地區：${region}\n`;
       status.textContent = '代理已連線，正在確認可用模型…';
@@ -86,7 +86,7 @@
         pageToken = models.nextPageToken || '';
       } while (pageToken && !available);
       if (!available) throw new Error('你的 API 模型清單沒有可用的 Gemini 3.8 Flash。請確認此專案的模型權限。');
-      status.textContent = '模型已確認，正在等待 Gemini 回覆…';
+      status.textContent = '模型已確認，正在等待 Gemini 回覆…\n首次回覆可能較慢，最多等候約 2 分鐘。';
       const result = await request('/api/v1beta/models/gemini-3.8-flash:generateContent', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply only with OK.' }] }], generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'low' } } }),
