@@ -26,7 +26,28 @@ explicitly. Without these rewrites, nested requests never reach the function.
 Send the API key in `x-goog-api-key`, and JSON bodies with
 `Content-Type: application/json`. Legacy `?key=...` requests are accepted but the
 header is preferred because URLs can appear in browser history and access logs.
-The proxy exposes only `/v1beta/models` and its model/action endpoints.
+The proxy exposes only the native model/action endpoints and the compatible
+chat-completions and model-list endpoints below.
+
+## OpenAI-compatible clients
+
+For clients with `base_url`, `model`, and `api_key` settings:
+
+```ini
+[模型 1]
+base_url = https://gemini-proxy-opal-one.vercel.app/v1
+model = gemini-3.8-flash
+api_key = YOUR_GOOGLE_GEMINI_API_KEY
+```
+
+Use a Google Gemini API key that already works with the native endpoint.
+The client sends `Authorization: Bearer ...`. `POST /v1/chat/completions`
+and `GET /v1/models` forward to Google's `/v1beta/openai/` endpoints.
+Chat JSON, tool calls, and streamed responses pass through unchanged.
+This implements Chat Completions; other client API modes such as Responses
+are not exposed. Repeating keys from the same Google project does not add quota.
+
+See [Google's compatibility documentation](https://ai.google.dev/gemini-api/docs/openai).
 
 ## Verify in Windows PowerShell or PowerShell 7
 

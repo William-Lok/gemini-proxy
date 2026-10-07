@@ -6,6 +6,10 @@
   },
   "rewrites": [
     {
+      "source": "/v1/:path*",
+      "destination": "/api/proxy?__gemini_path=/v1beta/openai/:path*"
+    },
+    {
       "source": "/api/proxy/v1beta/:path*",
       "destination": "/api/proxy?__gemini_path=/v1beta/:path*"
     },

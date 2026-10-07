@@ -15,6 +15,66 @@ test('health and preflight do not contact Google', async () => {
   const preflight = await handler(new Request('https://proxy.example/api/v1beta/models', { method: 'OPTIONS' }));
   assert.equal(preflight.status, 204);
   assert.match(preflight.headers.get('access-control-allow-headers'), /x-goog-api-key/);
+  assert.match(preflight.headers.get('access-control-allow-headers'), /Authorization/);
+});
+
+test('compatible chat routes forward bearer auth, JSON and raw responses', async (t) => {
+  const body = JSON.stringify({ model: 'gemini-3.8-flash', messages: [{ role: 'user', content: 'Hello' }] });
+  const reply = { choices: [{ message: { role: 'assistant', content: 'OK' } }] };
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    assert.equal(new URL(url).origin, 'https://generativelanguage.googleapis.com');
+    assert.equal(new URL(url).pathname, '/v1beta/openai/chat/completions');
+    assert.equal(new URL(url).search, '');
+    assert.equal(init.headers.get('authorization'), 'Bearer test-google-key');
+    assert.equal(init.headers.has('x-goog-api-key'), false);
+    assert.equal(init.headers.has('cookie'), false);
+    assert.equal(new TextDecoder().decode(init.body), body);
+    return Response.json(reply);
+  });
+  for (const path of [
+    '/v1/chat/completions',
+    '/api/proxy?__gemini_path=/v1beta/openai/chat/completions&path=chat/completions',
+  ]) {
+    const result = await handler(new Request(`https://proxy.example${path}`, {
+      method: 'POST', headers: { authorization: 'Bearer test-google-key', 'content-type': 'application/json', cookie: 'private' }, body,
+    }));
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), reply);
+  }
+  assert.ok(deployment.rewrites.some(({ source, destination }) =>
+    source === '/v1/:path*' && destination === '/api/proxy?__gemini_path=/v1beta/openai/:path*'));
+});
+
+test('compatible model listing and streamed chat preserve the protocol', async (t) => {
+  const stream = 'data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n';
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    assert.equal(init.headers.get('authorization'), 'Bearer test-google-key');
+    if (new URL(url).pathname.endsWith('/models')) {
+      assert.equal(new URL(url).pathname, '/v1beta/openai/models');
+      return Response.json({ object: 'list', data: [{ id: 'gemini-3.8-flash', object: 'model' }] });
+    }
+    assert.equal(JSON.parse(new TextDecoder().decode(init.body)).stream, true);
+    return new Response(stream, { headers: { 'content-type': 'text/event-stream' } });
+  });
+  const models = await handler(new Request('https://proxy.example/v1/models', { headers: { authorization: 'Bearer test-google-key' } }));
+  assert.equal((await models.json()).data[0].id, 'gemini-3.8-flash');
+  const response = await handler(new Request('https://proxy.example/v1/chat/completions', {
+    method: 'POST', headers: { authorization: 'Bearer test-google-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'gemini-3.8-flash', messages: [], stream: true }),
+  }));
+  assert.equal(response.headers.get('content-type'), 'text/event-stream');
+  assert.equal(await response.text(), stream);
+});
+
+test('compatible routes reject missing auth, malformed auth and unsupported APIs before forwarding', async (t) => {
+  const upstream = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected network request'); });
+  for (const authorization of ['', 'Basic abc', 'Bearer']) {
+    const response = await handler(new Request('https://proxy.example/v1/models', { headers: { authorization } }));
+    assert.equal(response.status, 401);
+  }
+  const unsupported = await handler(new Request('https://proxy.example/v1/responses', { method: 'POST', body: '{}' }));
+  assert.equal(unsupported.status, 404);
+  assert.equal(upstream.mock.callCount(), 0);
 });
 
 test('missing credentials, unsupported paths and methods fail locally', async () => {

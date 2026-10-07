@@ -1,7 +1,7 @@
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-goog-api-key',
+  'Access-Control-Allow-Headers': 'Content-Type, x-goog-api-key, Authorization',
   'Access-Control-Expose-Headers': 'X-Proxy-Region',
   'Cache-Control': 'no-store',
 };
@@ -31,7 +31,9 @@ async function handler(req) {
   // preserved by Vercel, without depending on rewrite URL behavior.
   const path = incoming.pathname === '/api/proxy'
     ? incoming.searchParams.get('__gemini_path') || ''
-    : incoming.pathname.replace(/^\/api(?:\/proxy)?(?=\/v1beta\/)/, '');
+    : incoming.pathname.startsWith('/v1/')
+      ? incoming.pathname.replace(/^\/v1\//, '/v1beta/openai/')
+      : incoming.pathname.replace(/^\/api(?:\/proxy)?(?=\/v1beta\/)/, '');
 
   if (!path && req.method === 'GET') {
     return localResponse({
@@ -41,10 +43,12 @@ async function handler(req) {
       upstreamTimeoutSeconds: 120,
       region: process.env.VERCEL_REGION || 'local',
       modelsEndpoint: '/api/v1beta/models',
+      openaiBasePath: '/v1',
     });
   }
-  if (!/^\/v1beta\/models(?:\/[A-Za-z0-9._:-]+)?$/.test(path)) {
-    return localResponse({ error: { message: 'Use /api/v1beta/models or /api/v1beta/models/{model}:generateContent.' } }, 404);
+  const openaiRoute = /^\/v1beta\/openai\/(?:chat\/completions|models)$/.test(path);
+  if (!openaiRoute && !/^\/v1beta\/models(?:\/[A-Za-z0-9._:-]+)?$/.test(path)) {
+    return localResponse({ error: { message: 'Use /api/v1beta/models, its model/action endpoints, or /v1/chat/completions and /v1/models.' } }, 404);
   }
 
   const url = new URL('https://generativelanguage.googleapis.com');
@@ -65,7 +69,15 @@ async function handler(req) {
     headers.set('x-goog-api-key', url.searchParams.get('key'));
   }
   url.searchParams.delete('key');
-  if (!headers.get('x-goog-api-key')) {
+  if (openaiRoute) {
+    const bearer = /^Bearer\s+(\S+)$/i.exec(req.headers.get('authorization') || '');
+    const apiKey = bearer?.[1] || headers.get('x-goog-api-key');
+    if (!apiKey) {
+      return localResponse({ error: { message: 'Supply your Gemini API key as Authorization: Bearer YOUR_KEY.' } }, 401);
+    }
+    headers.set('authorization', `Bearer ${apiKey}`);
+    headers.delete('x-goog-api-key');
+  } else if (!headers.get('x-goog-api-key')) {
     return localResponse({ error: { message: 'Supply your Gemini API key in the x-goog-api-key header.' } }, 401);
   }
 
